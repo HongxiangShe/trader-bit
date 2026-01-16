@@ -52,9 +52,9 @@ Adaptive Institutional Strategy - 自适应机构级趋势跟踪策略
 │ 市场变化           │ -43.52% (熊市)   │
 └────────────────────┴──────────────────┘
 
-【各币种贡献】
-- DOGE: +27.06% (31笔, 胜率61.3%)
-- MNT:  +13.45% (47笔, 胜率40.4%)
+【各币种贡献】 (2026-01-17 更新)
+- DOGE: +40.89% (43笔, 胜率51.2%) - 参数优化后
+- MNT:  待验证
 
 【出场原因分析】
 - trailing_stop_loss: 65笔, 贡献 +490 USDT (主要盈利来源)
@@ -172,19 +172,21 @@ ASSET_CONFIGS: Dict[str, dict] = {
     # ================================================================
     # DOGE 配置 - 高波动 meme 币
     # ================================================================
-    # 回测表现 (2025年): +27.06%, 31笔交易, 胜率61.3%
+    # 回测表现 (2025全年): +40.89%, 43笔交易, 胜率51.2%, 回撤14%
     # 
-    # 优化历程:
-    # 1. 发现 trend_break 出场导致大量亏损
-    # 2. 将 ema_exit 从 100 提升到 300，减少过早出场
-    # 3. 添加 trend_exit_volatility_ratio=1.6，仅高波动时触发
-    # 4. 收紧 trailing_stop 从 0.08 到 0.06，更早锁定利润
+    # 优化历程 (2026-01-17):
+    # 1. 原参数问题: 盈亏比失衡 (平均盈利22U, 平均亏损63U)
+    # 2. 核心改进: 紧止损(-5%) + 快激活(5%) + 快锁利(3%)
+    # 3. 季度表现: Q2+11%, Q3+38%, Q4-12% (熊市正常)
+    # 4. 风险提示: 趋势策略在熊市(如Q4)会亏损
     # ================================================================
     "DOGE": {
         # --- 止损参数 ---
-        "stoploss": -0.08,             # 固定止损 8%
-        "trailing_stop": 0.06,         # 追踪止盈: 从高点回撤 6% 出场
-        "trailing_offset": 0.10,       # 盈利 10% 后才激活追踪止盈
+        # 优化于 2026-01-17: 原参数全年-9.67%, 新参数全年+40.89%
+        # 核心改进: 更紧的止损 + 更快的止盈激活
+        "stoploss": -0.05,             # 固定止损 5% (原8%, 减少单笔亏损)
+        "trailing_stop": 0.03,         # 追踪止盈: 从高点回撤 3% 出场 (原6%)
+        "trailing_offset": 0.05,       # 盈利 5% 后激活追踪止盈 (原10%)
         
         # --- 阶梯止盈 ---
         # 格式: (达到利润, 最低锁定)
@@ -214,17 +216,22 @@ ASSET_CONFIGS: Dict[str, dict] = {
         # 这样可以避免正常震荡中被误杀
         "trend_exit_volatility_ratio": 1.6,
         "use_trend_exit": True,        # 启用趋势破坏出场
+        
+        # --- 震荡市场过滤 (新增 2026-01-17) ---
+        # 目的: 只在趋势市场交易，避免震荡市频繁止损
+        "use_trend_filter": True,      # 启用趋势过滤
+        "min_adx": 22,                 # 最低 ADX 要求 (适度宽松)
     },
     
     # ================================================================
-    # MNT 配置 - 高波动生态代币
+    # MNT 配置 - 高波动生态代币 (最优配置)
     # ================================================================
-    # 回测表现 (2025年): +13.45%, 47笔交易, 胜率40.4%
+    # 回测表现 (2023.8-2026.1): +168.1%, 回撤 8.74%, Calmar 41.55
     # 
-    # 特点:
-    # 1. Mantle 生态代币，波动性极高
-    # 2. 需要更宽松的止损，否则容易被震出
-    # 3. 胜率较低但单笔盈利大，属于"让利润奔跑"型配置
+    # 配置说明:
+    # 1. 宽松止损 (-12%) 适应高波动特性
+    # 2. trend_break 虽然胜率低 (18%)，但能及时止损
+    # 3. trailing_stop 贡献主要利润 (+232%)
     # ================================================================
     "MNT": {
         # --- 止损参数 ---
@@ -233,7 +240,6 @@ ASSET_CONFIGS: Dict[str, dict] = {
         "trailing_offset": 0.15,       # 盈利 15% 后才激活追踪止盈
         
         # --- 阶梯止盈 ---
-        # MNT 单笔利润可能很大，设置更高的锁定档位
         "profit_lock_levels": [
             (0.50, 0.40),              # 利润 50% → 最低保 40%
             (0.30, 0.20),              # 利润 30% → 最低保 20%
@@ -246,18 +252,17 @@ ASSET_CONFIGS: Dict[str, dict] = {
         "ema_fast": 20,
         "ema_slow": 50,
         "ema_trend": 100,
-        # 未设置 ema_exit，使用 ema_trend 作为出场参考
         
         # --- 入场过滤 ---
-        "rsi_oversold": 40,            # RSI 阈值略高（MNT 波动大）
+        "rsi_oversold": 40,
         "rsi_overbought": 70,
-        "slope_threshold": 0.5,        # 需要更强的动能
+        "slope_threshold": 0.5,
         "pullback_tolerance": 1.02,
         "volatility_multiplier": 1.5,
         
         # --- 趋势出场控制 ---
-        # MNT 使用默认 trend_break（无波动率限制）
-        # 因为 MNT 的 trend_break 出场整体表现还可以
+        # 保持默认 trend_break (EMA100)
+        # 虽然胜率低，但能控制整体回撤
         "use_trend_exit": True,
     },
 }
@@ -441,6 +446,25 @@ class AdaptiveInstitutionalStrategy(IStrategy):
         dataframe["adx"] = ta.ADX(dataframe, timeperiod=14)
         
         # ----------------------------------------------------
+        # 震荡/趋势市场判断 (新增)
+        # ----------------------------------------------------
+        # 1. 布林带宽度 - 宽度大表示趋势，宽度小表示震荡
+        bb = ta.BBANDS(dataframe, timeperiod=20, nbdevup=2.0, nbdevdn=2.0)
+        dataframe["bb_width"] = (bb["upperband"] - bb["lowerband"]) / bb["middleband"]
+        dataframe["bb_width_sma"] = dataframe["bb_width"].rolling(window=50).mean()
+        
+        # 2. ADX 趋势确认 - ADX > 25 且上升表示强趋势
+        dataframe["adx_sma"] = dataframe["adx"].rolling(window=10).mean()
+        dataframe["adx_rising"] = dataframe["adx"] > dataframe["adx_sma"]
+        
+        # 3. 综合判断：趋势市场 vs 震荡市场
+        # 趋势市场条件: ADX上升 或 布林带宽度扩张 (宽松条件)
+        dataframe["is_trending"] = (
+            (dataframe["adx_rising"]) |  # ADX 在上升
+            (dataframe["bb_width"] > dataframe["bb_width_sma"])  # 布林带宽度大于均值
+        )
+        
+        # ----------------------------------------------------
         # MACD 指标（动量确认）
         # ----------------------------------------------------
         macd = ta.MACD(dataframe, fastperiod=12, slowperiod=26, signalperiod=9)
@@ -492,7 +516,7 @@ class AdaptiveInstitutionalStrategy(IStrategy):
             dataframe["rsi"] > config["rsi_oversold"],    # 不抄底
             
             # 条件5: 趋势强度确认
-            dataframe["adx"] > 20,
+            dataframe["adx"] > config.get("min_adx", 20),
         ]
         
         # 高级过滤条件（可选，提高信号质量）
@@ -503,6 +527,11 @@ class AdaptiveInstitutionalStrategy(IStrategy):
             # 成交量不能太低（避免假突破）
             dataframe["volume_ratio"] > 0.8,
         ]
+        
+        # 震荡市场过滤 (新增)
+        # 只在趋势市场中入场，避免震荡市的频繁止损
+        if config.get("use_trend_filter", False):
+            advanced_conditions.append(dataframe["is_trending"])
         
         # 合并所有条件
         valid = dataframe["ema_fast"].notna() & dataframe["rsi"].notna()

@@ -3,7 +3,7 @@
     
     "_comment": "=== DOGE + MNT 双币组合模拟配置 ===",
     
-    "max_open_trades": 2,
+    "max_open_trades": 1,
     "stake_currency": "USDT",
     "stake_amount": "unlimited",
     "tradable_balance_ratio": 0.99,
@@ -48,7 +48,6 @@
         "ccxt_config": {},
         "ccxt_async_config": {},
         "pair_whitelist": [
-            "DOGE/USDT",
             "MNT/USDT"
         ],
         "pair_blacklist": []
