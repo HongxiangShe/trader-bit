@@ -224,22 +224,17 @@ ASSET_CONFIGS: Dict[str, dict] = {
     },
     
     # ================================================================
-    # MNT 配置 - 高波动生态代币 (最优配置)
+    # MNT 配置 - 方案B：仅放宽入场，保持原止损止盈
     # ================================================================
-    # 回测表现 (2023.8-2026.1): +168.1%, 回撤 8.74%, Calmar 41.55
-    # 
-    # 配置说明:
-    # 1. 宽松止损 (-12%) 适应高波动特性
-    # 2. trend_break 虽然胜率低 (18%)，但能及时止损
-    # 3. trailing_stop 贡献主要利润 (+232%)
+    # 优化思路: 增加入场机会，但不改变风控参数
     # ================================================================
     "MNT": {
-        # --- 止损参数 ---
-        "stoploss": -0.12,             # 固定止损 12% (宽松)
-        "trailing_stop": 0.10,         # 追踪止盈: 从高点回撤 10% 出场
-        "trailing_offset": 0.15,       # 盈利 15% 后才激活追踪止盈
+        # --- 止损参数 (保持原参数) ---
+        "stoploss": -0.12,             # 固定止损 12%
+        "trailing_stop": 0.10,         # 追踪止盈: 从高点回撤 10%
+        "trailing_offset": 0.15,       # 盈利 15% 后激活
         
-        # --- 阶梯止盈 ---
+        # --- 阶梯止盈 (保持原参数) ---
         "profit_lock_levels": [
             (0.50, 0.40),              # 利润 50% → 最低保 40%
             (0.30, 0.20),              # 利润 30% → 最低保 20%
@@ -254,15 +249,17 @@ ASSET_CONFIGS: Dict[str, dict] = {
         "ema_trend": 100,
         
         # --- 入场过滤 ---
-        "rsi_oversold": 40,
-        "rsi_overbought": 70,
-        "slope_threshold": 0.5,
-        "pullback_tolerance": 1.02,
+        "rsi_oversold": 40,            # RSI > 40
+        "rsi_overbought": 70,          # RSI < 70
+        "slope_threshold": 0.5,        # 斜率 > 0.5%
+        "pullback_tolerance": 1.02,    # 回踩容忍度 2%
         "volatility_multiplier": 1.5,
         
+        # --- 禁用额外过滤 ---
+        "min_adx": 0,
+        "use_advanced_filter": False,
+        
         # --- 趋势出场控制 ---
-        # 保持默认 trend_break (EMA100)
-        # 虽然胜率低，但能控制整体回撤
         "use_trend_exit": True,
     },
 }
@@ -519,28 +516,34 @@ class AdaptiveInstitutionalStrategy(IStrategy):
             dataframe["adx"] > config.get("min_adx", 20),
         ]
         
-        # 高级过滤条件（可选，提高信号质量）
-        advanced_conditions = [
-            # MACD 柱状图为正（动量向上）
-            dataframe["macd_hist"] > 0,
-            
-            # 成交量不能太低（避免假突破）
-            dataframe["volume_ratio"] > 0.8,
-        ]
-        
-        # 震荡市场过滤 (新增)
-        # 只在趋势市场中入场，避免震荡市的频繁止损
-        if config.get("use_trend_filter", False):
-            advanced_conditions.append(dataframe["is_trending"])
-        
-        # 合并所有条件
+        # 合并基础条件
         valid = dataframe["ema_fast"].notna() & dataframe["rsi"].notna()
         basic_entry = reduce(lambda x, y: x & y, conditions) & valid
-        full_entry = basic_entry & reduce(lambda x, y: x & y, advanced_conditions)
         
-        # 只在满足所有条件时入场
-        dataframe.loc[full_entry, "enter_long"] = 1
-        dataframe.loc[full_entry, "enter_tag"] = "full_signal"
+        # 检查是否使用高级过滤（MACD + 成交量）
+        use_advanced = config.get("use_advanced_filter", True)  # 默认启用
+        
+        if use_advanced:
+            # 高级过滤条件（可选，提高信号质量）
+            advanced_conditions = [
+                # MACD 柱状图为正（动量向上）
+                dataframe["macd_hist"] > 0,
+                
+                # 成交量不能太低（避免假突破）
+                dataframe["volume_ratio"] > 0.8,
+            ]
+            
+            # 震荡市场过滤
+            if config.get("use_trend_filter", False):
+                advanced_conditions.append(dataframe["is_trending"])
+            
+            full_entry = basic_entry & reduce(lambda x, y: x & y, advanced_conditions)
+            dataframe.loc[full_entry, "enter_long"] = 1
+            dataframe.loc[full_entry, "enter_tag"] = "full_signal"
+        else:
+            # 仅使用基础条件（与 MntTrendHoldV3 一致）
+            dataframe.loc[basic_entry, "enter_long"] = 1
+            dataframe.loc[basic_entry, "enter_tag"] = "basic_signal"
         
         return dataframe
 
